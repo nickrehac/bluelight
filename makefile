@@ -1,15 +1,23 @@
+DBUS_INCLUDE_DIR=$(shell pkg-config --cflags dbus-1)
+
 CC=g++
-CXXFLAGS= -Wall -I/usr/include/dbus-1.0 -I/usr/lib64/dbus-1.0/include
-LDFLAGS= -ldbus-1 -lncurses
+CXXFLAGS= -Wall -Wno-sign-compare $(DBUS_INCLUDE_DIR)
+LDFLAGS= -ldbus-1 -lncurses -lssl -lcrypto
 
 
-all: debug main clean
+all: clean debug main
+
+release: clean main
+
+release: CXXFLAGS += -O3
 
 debug: CXXFLAGS += -g -D DEBUG
 
-main: bluelight.o main.o
+main:
+	$(CC) $(CXXFLAGS) -o main main.cpp bluelight.cpp $(LDFLAGS)
 
-.PHONY: clean debug
+.PHONY: clean debug release
 
 clean:
-	rm *.o
+	rm -f *.o
+	rm -f main

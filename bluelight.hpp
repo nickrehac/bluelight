@@ -1,6 +1,8 @@
 #include <dbus/dbus.h>
-#include <ncurses.h>
 #include <poll.h>
+
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include <httplib.h>
 
 #include <vector>
 #include <string>
@@ -73,4 +75,8 @@ public:
   void poll();
 
   void setOnDevicesUpdated(std::function<void()> callback);
+};
+
+class LEDConnection {
+
 };

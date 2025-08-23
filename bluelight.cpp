@@ -200,11 +200,11 @@ void BluetoothController::dispatch() {
 
 
 void BluetoothController::poll() {
+  pollWatches();
+
   int status;
   while((status = dbus_connection_get_dispatch_status(connection) == DBUS_DISPATCH_DATA_REMAINS))
       dbus_connection_dispatch(connection);
-
-  //
 }
 
 

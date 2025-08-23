@@ -1,5 +1,6 @@
 #include "bluelight.hpp"
 #include <fstream>
+#include <ncurses.h>
 
 int main() {
   BluetoothController controller;
