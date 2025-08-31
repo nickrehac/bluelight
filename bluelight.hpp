@@ -11,6 +11,7 @@
 #include <iostream>
 #include <cstring>
 #include <functional>
+#include <optional>
 
 #define BT_SERVICE "org.bluez"
 #define ADAPTER_PATH "/org/bluez/hci0"
@@ -29,14 +30,20 @@ class Device {
 
   std::string alias;
   std::string address;
-  bool inRange;
 
+  bool bonded;
+  int rssi;
+
+  std::optional<std::string> getString(std::string property);
+  std::optional<short> getShort(std::string property);
+  std::optional<bool> getBool(std::string property);
 
 public:
   Device(std::string path, DBusConnection * connection);
 
   std::string getAlias();
-  bool isPaired();
+  bool isBonded();
+  short getRSSI();
 };
 
 class BluetoothController {

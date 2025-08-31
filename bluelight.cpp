@@ -102,7 +102,7 @@ void BluetoothController::pollWatches() {
 
 BluetoothController::~BluetoothController() {
   if(connection) {
-    dbus_connection_unregister_object_path(connection, APP_PATH);
+    dbus_connection_unregister_object_path(connection, "/");
     dbus_connection_unref(connection);
   }
 }
@@ -120,7 +120,11 @@ void BluetoothController::updateDevices() {
   query = dbus_message_new_method_call(BT_SERVICE, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
 
   reply = dbus_connection_send_with_reply_and_block(connection, query, DBUS_TIMEOUT_USE_DEFAULT, &err);
-  if(!reply) fail(err);
+  if(!reply) {
+    dbus_message_unref(query);
+    dbus_message_unref(reply);
+    return;
+  }
 
   DBusMessageIter objects;
 
@@ -150,6 +154,10 @@ void BluetoothController::updateDevices() {
   dbus_message_unref(reply);
 
   devices = newDevices;
+
+  std::sort(devices.begin(), devices.end(), [](Device a, Device b){
+      return a.isBonded();
+  });
 
   if(onDevicesUpdated) onDevicesUpdated();
 }
@@ -219,34 +227,134 @@ void fail(DBusError e) {
 Device::Device(std::string path, DBusConnection * connection) {
   this->connection = connection;
   this->path = path;
+  alias = "NO_NAME";
+  bonded = false;
+  rssi = 0;
+
+  auto deviceAlias = getString("Alias");
+  auto deviceBonded = getBool("Bonded");
+  auto deviceAddress = getString("Address");
+  auto deviceRSSI = getShort("RSSI");
+
+  if(deviceAlias) alias = *deviceAlias;
+
+  if(deviceBonded) bonded = *deviceBonded;
+
+  if(deviceAddress) address = *deviceAddress;
+
+  if(deviceRSSI) rssi = *deviceRSSI;
+}
+
+
+std::optional<std::string> Device::getString(std::string property) {
+  const char * interface = "org.bluez.Device1";
+  const char * propertyCStr = property.c_str();
+  std::optional<std::string> retval;
+
 
   DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.freedesktop.DBus.Properties", "Get");
-  const char * interface = "org.bluez.Device1";
-  const char * property = "Alias";
-  dbus_message_append_args(msg, DBUS_TYPE_STRING, &interface, DBUS_TYPE_STRING, &property, DBUS_TYPE_INVALID);
+
+  dbus_message_append_args(msg, DBUS_TYPE_STRING, &interface, DBUS_TYPE_STRING, &propertyCStr, DBUS_TYPE_INVALID);
+
 
   DBusError err;
   dbus_error_init(&err);
   DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
-  if(!reply) fail(err);
+
+  if(!reply) return retval;
 
   DBusMessageIter iter;
   dbus_message_iter_init(reply, &iter);
   dbus_message_iter_recurse(&iter, &iter);
 
-  const char * alias_cstr = "NO_NAME";
+  const char * result;
 
   if(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_STRING) {
-    dbus_message_iter_get_basic(&iter, &alias_cstr);
+    dbus_message_iter_get_basic(&iter, &result);
+    retval = std::string(result);
   }
-
-  alias = alias_cstr;
 
   dbus_message_unref(reply);
   dbus_message_unref(msg);
+
+  return retval;
+}
+
+std::optional<short> Device::getShort(std::string property) {
+  const char * interface = "org.bluez.Device1";
+  const char * propertyCStr = property.c_str();
+  std::optional<bool> retval;
+
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.freedesktop.DBus.Properties", "Get");
+
+  dbus_message_append_args(msg, DBUS_TYPE_STRING, &interface, DBUS_TYPE_STRING, &propertyCStr, DBUS_TYPE_INVALID);
+
+
+  DBusError err;
+  dbus_error_init(&err);
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+
+  if(!reply) return retval;
+
+  DBusMessageIter iter;
+  dbus_message_iter_init(reply, &iter);
+  dbus_message_iter_recurse(&iter, &iter);
+
+  if(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_INT16) {
+    int result = 0;
+    dbus_message_iter_get_basic(&iter, &result);
+    retval = result;
+  }
+
+  dbus_message_unref(reply);
+  dbus_message_unref(msg);
+
+  return retval;
+}
+
+std::optional<bool> Device::getBool(std::string property) {
+  const char * interface = "org.bluez.Device1";
+  const char * propertyCStr = property.c_str();
+  std::optional<bool> retval;
+
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.freedesktop.DBus.Properties", "Get");
+
+  dbus_message_append_args(msg, DBUS_TYPE_STRING, &interface, DBUS_TYPE_STRING, &propertyCStr, DBUS_TYPE_INVALID);
+
+
+  DBusError err;
+  dbus_error_init(&err);
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+
+  if(!reply) return retval;
+
+  DBusMessageIter iter;
+  dbus_message_iter_init(reply, &iter);
+  dbus_message_iter_recurse(&iter, &iter);
+
+
+  if(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_BOOLEAN) {
+    bool result = 0;
+    dbus_message_iter_get_basic(&iter, &result);
+    retval = result;
+  }
+
+  dbus_message_unref(reply);
+  dbus_message_unref(msg);
+
+  return retval;
 }
 
 
 std::string Device::getAlias() {
   return alias;
+}
+
+
+bool Device::isBonded() {
+  return bonded;
+}
+
+short Device::getRSSI() {
+  return rssi;
 }

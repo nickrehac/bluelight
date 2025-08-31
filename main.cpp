@@ -29,6 +29,7 @@ public:
     if(keys.size() > 1) keyingWinHeight = keys.size();
 
     initscr();
+    start_color();
     curs_set(0);
     noecho();
     cbreak();
@@ -65,9 +66,6 @@ public:
   void getKeys();
 
   void render() {
-    //erase();
-    //refresh();
-
     werase(pairingWindow);
     werase(keyingWindow);
 
@@ -86,6 +84,19 @@ public:
     for(int i = 0; i < devices.size(); i++) {
       Device d = devices[i];
       mvwaddstr(pairingWindow, 1+i, 2, d.getAlias().c_str());
+
+      const char * textPair = "[Pair]";
+      const char * textUnpair = "[Forget]";
+
+      if(i == cursorY && cursorX == 0) wattron(pairingWindow, A_REVERSE | COLOR_PAIR(0));
+
+      if(d.isBonded()) {
+        mvwaddstr(pairingWindow, 1+i, WINDOW_WIDTH - strlen(textUnpair) - 1, textUnpair);
+      } else {
+        mvwaddstr(pairingWindow, 1+i, WINDOW_WIDTH - strlen(textPair) - 1, textPair);
+      }
+
+      if(i == cursorY && cursorX == 0) wattroff(pairingWindow, A_REVERSE | COLOR_PAIR(0));
     }
     if(devices.size() == 0) {
       mvwaddstr(pairingWindow, 1, 2, "No Nearby Devices");
