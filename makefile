@@ -5,11 +5,13 @@ CXXFLAGS= -Wall -Wno-sign-compare $(DBUS_INCLUDE_DIR)
 LDFLAGS= -ldbus-1 -lncurses -lssl -lcrypto
 
 
-all: clean debug main
+all: clean debug
 
 release: clean main
 
 release: CXXFLAGS += -O3
+
+debug: main
 
 debug: CXXFLAGS += -g -D DEBUG
 

@@ -109,6 +109,7 @@ BluetoothController::~BluetoothController() {
 
 
 void BluetoothController::updateDevices() {
+  //TODO: sort by rssi (paired first)
   std::vector<Device> newDevices;
 
   DBusMessage * query;
