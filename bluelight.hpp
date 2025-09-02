@@ -43,12 +43,14 @@ public:
   Device(std::string path, DBusConnection * connection);
 
   std::string getAlias();
+  std::string getAddress();
+
   bool isBonded();
   short getRSSI();
   bool isConnected();
 
   bool pair();
-  bool unBond();
+  bool unPair();
 
   std::optional<DBusError> call(std::string functionName);
 
@@ -70,6 +72,7 @@ class BluetoothController {
 
   static DBusHandlerResult signalHandler(DBusConnection * connection, DBusMessage * message, void * controller);
 
+  bool pendingDevicesUpdate;
   std::function<void()> onDevicesUpdated;
 
   void registerForSignals();

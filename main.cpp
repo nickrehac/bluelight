@@ -36,7 +36,7 @@ public:
     curs_set(0);
     noecho();
     cbreak();
-    timeout(500);
+    timeout(1000);
 
     //init_pair(1, -1, COLOR_GREY);
 
@@ -71,6 +71,12 @@ public:
       wresize(keyingWindow, pairedDevices.size() + 2, WINDOW_WIDTH);
     }
     devices = d;
+
+    (void)std::remove_if(keys.begin(), keys.end(), [this](std::string key) {
+      return std::find_if(pairedDevices.begin(), pairedDevices.end(), [key](Device dev){
+        return dev.getAddress() == key;
+      }) == pairedDevices.end();
+    });
 
     render();
   }
@@ -141,6 +147,15 @@ public:
 
       if(highlighted) wattron(keyingWindow, A_REVERSE);
 
+      const char * textKey = "[KEY]";
+      const char * textNonKey = "[]";
+
+      if(std::find(keys.begin(), keys.end(), d.getAddress()) == keys.end()) {
+        mvwaddstr(keyingWindow, 1+i, WINDOW_WIDTH - strlen(textNonKey) - 1, textNonKey);
+      } else {
+        mvwaddstr(keyingWindow, 1+i, WINDOW_WIDTH - strlen(textKey) - 1, textKey);
+      }
+
       if(highlighted) wattroff(keyingWindow, A_REVERSE);
     }
     if(pairedDevices.size() == 0) {
@@ -174,11 +189,25 @@ public:
       if(key == KEY_DOWN) cursorDevices++;
 
       if(cursorDevices > devices.size() - 1) cursorDevices = devices.size() - 1;
+
+      if(key == KEY_ENTER) {
+        Device curDevice = devices[cursorDevices];
+        if(curDevice.isBonded()) {
+          curDevice.unPair();
+        } else curDevice.pair();
+      }
     } else {
       if(key == KEY_UP && cursorKeys > 0) cursorKeys--;
       if(key == KEY_DOWN) cursorKeys++;
 
       if(cursorKeys > pairedDevices.size() - 1) cursorKeys = pairedDevices.size() - 1;
+
+      if(key == '\n') {
+        Device curDevice = pairedDevices[cursorKeys];
+        if(std::find(keys.begin(), keys.end(), curDevice.getAddress()) == keys.end()) {
+          keys.push_back(curDevice.getAddress());
+        } else (void)std::remove(keys.begin(), keys.end(), curDevice.getAddress());
+      }
     }
 
 
@@ -190,6 +219,7 @@ public:
     return INPUT_CONTINUE;
   }
 };
+
 
 int main() {
   BluetoothController controller;

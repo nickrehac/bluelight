@@ -40,6 +40,8 @@ void BluetoothController::registerForSignals() {
 
 
 BluetoothController::BluetoothController() {
+  pendingDevicesUpdate = false;
+
   DBusError err;
   dbus_error_init(&err);
   
@@ -109,7 +111,7 @@ BluetoothController::~BluetoothController() {
 
 
 void BluetoothController::updateDevices() {
-  //TODO: sort by rssi (paired first)
+  //TODO: persist existing devices
   std::vector<Device> newDevices;
 
   DBusMessage * query;
@@ -159,7 +161,7 @@ void BluetoothController::updateDevices() {
       return a.isBonded();
   });
 
-  if(onDevicesUpdated) onDevicesUpdated();
+  pendingDevicesUpdate = true;
 }
 
 
@@ -214,6 +216,10 @@ void BluetoothController::poll() {
   int status;
   while((status = dbus_connection_get_dispatch_status(connection) == DBUS_DISPATCH_DATA_REMAINS))
       dbus_connection_dispatch(connection);
+  if(pendingDevicesUpdate) {
+    pendingDevicesUpdate = false;
+    if(onDevicesUpdated) onDevicesUpdated();
+  }
 }
 
 
@@ -349,11 +355,13 @@ std::optional<bool> Device::getBool(std::string property) {
   return retval;
 }
 
-
 std::string Device::getAlias() {
   return alias;
 }
 
+std::string Device::getAddress() {
+  return address;
+}
 
 bool Device::isBonded() {
   return bonded;
@@ -366,6 +374,7 @@ bool Device::isConnected() {
 short Device::getRSSI() {
   return rssi;
 }
+
 
 std::optional<DBusError> Device::call(std::string functionName) {
   DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.bluez.Device1", "functionName");
@@ -384,6 +393,7 @@ std::optional<DBusError> Device::call(std::string functionName) {
   dbus_message_unref(msg);
   return retval;
 }
+
 
 bool Device::verifyProximity() {
   if(connected) {
@@ -406,3 +416,9 @@ bool Device::verifyProximity() {
   }
 }
 
+
+bool Device::pair() {
+  return call("Pair").has_value();
+}
+
+bool Device::unPair() {}
