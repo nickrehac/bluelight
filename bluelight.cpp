@@ -228,15 +228,19 @@ Device::Device(std::string path, DBusConnection * connection) {
   this->connection = connection;
   this->path = path;
   alias = "NO_NAME";
+  connected = false;
   bonded = false;
   rssi = 0;
 
   auto deviceAlias = getString("Alias");
+  auto deviceConnected = getBool("Connected");
   auto deviceBonded = getBool("Bonded");
   auto deviceAddress = getString("Address");
   auto deviceRSSI = getShort("RSSI");
 
   if(deviceAlias) alias = *deviceAlias;
+
+  if(deviceConnected) connected = *deviceConnected;
 
   if(deviceBonded) bonded = *deviceBonded;
 
@@ -355,6 +359,50 @@ bool Device::isBonded() {
   return bonded;
 }
 
+bool Device::isConnected() {
+  return connected;
+}
+
 short Device::getRSSI() {
   return rssi;
 }
+
+std::optional<DBusError> Device::call(std::string functionName) {
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.bluez.Device1", "functionName");
+
+  DBusError err;
+  dbus_error_init(&err);
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+
+  std::optional<DBusError> retval;
+
+  if(!reply) {
+    retval = err;
+  }
+
+  dbus_message_unref(reply);
+  dbus_message_unref(msg);
+  return retval;
+}
+
+bool Device::verifyProximity() {
+  if(connected) {
+    auto deviceConnected = getBool("Connected");
+    if(deviceConnected) connected = *deviceConnected;
+    if(connected) return true;
+  }
+
+  if(!bonded) return false;
+
+  auto connectionStatus = call("Connect");
+
+  if(connectionStatus) {
+    const char * err = connectionStatus.value().name;
+    if(strcmp(err, "org.bluez.Error.AlreadyConnected")) return true;
+    return false;
+  } else {
+    call("Disconnect");
+    return true;
+  }
+}
+

@@ -32,6 +32,7 @@ class Device {
   std::string address;
 
   bool bonded;
+  bool connected;
   int rssi;
 
   std::optional<std::string> getString(std::string property);
@@ -44,6 +45,14 @@ public:
   std::string getAlias();
   bool isBonded();
   short getRSSI();
+  bool isConnected();
+
+  bool pair();
+  bool unBond();
+
+  std::optional<DBusError> call(std::string functionName);
+
+  bool verifyProximity();
 };
 
 class BluetoothController {
