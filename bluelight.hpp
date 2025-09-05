@@ -16,6 +16,7 @@
 #define BT_SERVICE "org.bluez"
 #define ADAPTER_PATH "/org/bluez/hci0"
 #define DEVICES_PATH "/org/bluez/hci0/"
+#define BT_SERVICE_PATH "/org/bluez"
 #define APP_PATH "/com/nickrehac/bluelight"
 #define SIGNAL_MATCH_RULES "type='signal',sender='org.bluez'"
 
@@ -42,6 +43,7 @@ class Device {
 public:
   Device(std::string path, DBusConnection * connection);
 
+  std::string getPath();
   std::string getAlias();
   std::string getAddress();
 
@@ -72,12 +74,17 @@ class BluetoothController {
 
   static DBusHandlerResult signalHandler(DBusConnection * connection, DBusMessage * message, void * controller);
 
+  static DBusHandlerResult methodCallHandler(DBusConnection * connection, DBusMessage * message, void * controller);
+
   bool pendingDevicesUpdate;
   std::function<void()> onDevicesUpdated;
 
   void registerForSignals();
 
   std::vector<Device> devices;
+
+  void registerAgent();
+  void unregisterAgent();
 
 public:
   BluetoothController();

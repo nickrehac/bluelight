@@ -4,12 +4,13 @@
 DBusHandlerResult BluetoothController::incomingMessageHandler(DBusConnection * connection, DBusMessage * message, void * userData) {
   int type = dbus_message_get_type(message);
 
+
   if(type == DBUS_MESSAGE_TYPE_SIGNAL) return signalHandler(connection, message, userData);
+  if(type == DBUS_MESSAGE_TYPE_METHOD_CALL) return methodCallHandler(connection, message, userData);
 
   
   return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
-
 
 DBusHandlerResult BluetoothController::signalHandler(DBusConnection * connection, DBusMessage * message, void * userData) {
   DBusError err;
@@ -26,6 +27,26 @@ DBusHandlerResult BluetoothController::signalHandler(DBusConnection * connection
   if(!method.compare("InterfacesRemoved")) {
     controller->updateDevices();
     return DBUS_HANDLER_RESULT_HANDLED;
+  }
+
+  return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+DBusHandlerResult BluetoothController::methodCallHandler(DBusConnection * connection, DBusMessage * message, void * userData) {
+  DBusError err;
+  dbus_error_init(&err);
+
+  BluetoothController * controller = static_cast<BluetoothController*>(userData);
+
+  std::string method = dbus_message_get_member(message);
+
+
+  dbus_message_get_member(message);
+
+  if(!method.compare("RequestConfirmation")) {
+    DBusMessage * reply = dbus_message_new_method_return(message);
+    dbus_connection_send(connection, reply, nullptr);
+    dbus_message_unref(reply);
   }
 
   return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -57,7 +78,18 @@ BluetoothController::BluetoothController() {
 
   dbus_connection_set_watch_functions(connection, addWatchFunction, removeWatchFunction, NULL, &watches, freeWatchFunction);
 
+  registerAgent();
+
   registerForSignals();
+}
+
+
+BluetoothController::~BluetoothController() {
+  if(connection) {
+    unregisterAgent();
+    dbus_connection_unregister_object_path(connection, "/");
+    dbus_connection_unref(connection);
+  }
 }
 
 
@@ -102,12 +134,6 @@ void BluetoothController::pollWatches() {
 }
 
 
-BluetoothController::~BluetoothController() {
-  if(connection) {
-    dbus_connection_unregister_object_path(connection, "/");
-    dbus_connection_unref(connection);
-  }
-}
 
 
 void BluetoothController::updateDevices() {
@@ -124,7 +150,6 @@ void BluetoothController::updateDevices() {
   reply = dbus_connection_send_with_reply_and_block(connection, query, DBUS_TIMEOUT_USE_DEFAULT, &err);
   if(!reply) {
     dbus_message_unref(query);
-    dbus_message_unref(reply);
     return;
   }
 
@@ -146,7 +171,12 @@ void BluetoothController::updateDevices() {
     std::string path(path_cstr);
 
     if(path.compare(0, strlen(DEVICES_PATH), DEVICES_PATH) == 0) {//if device
-      newDevices.push_back(Device(path, connection));
+      auto existingDevice = std::find_if(devices.begin(), devices.end(), [path](Device dev){
+        return dev.getPath() == path;
+      });
+
+      if(existingDevice == devices.end() || (rand() % 20 == 0)) newDevices.push_back(Device(path, connection));
+      else newDevices.push_back(*existingDevice);
     }
 
     dbus_message_iter_next(&objects);
@@ -158,7 +188,7 @@ void BluetoothController::updateDevices() {
   devices = newDevices;
 
   std::sort(devices.begin(), devices.end(), [](Device a, Device b){
-      return a.isBonded();
+      return a.isBonded() && !b.isBonded();
   });
 
   pendingDevicesUpdate = true;
@@ -223,6 +253,46 @@ void BluetoothController::poll() {
 }
 
 
+void BluetoothController::registerAgent() {
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, BT_SERVICE_PATH, "org.bluez.AgentManager1", "RegisterAgent");
+  const char * object_path = APP_PATH;
+  const char * capability = "NoInputNoOutput";
+  dbus_message_append_args(msg, 
+      DBUS_TYPE_OBJECT_PATH, &object_path, 
+      DBUS_TYPE_STRING, &capability, 
+      DBUS_TYPE_INVALID);
+  DBusError err;
+
+  dbus_error_init(&err);
+
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+  dbus_message_unref(msg);
+
+  if(reply) {
+    dbus_message_unref(reply);
+  } else {
+  }
+}
+
+void BluetoothController::unregisterAgent() {
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, BT_SERVICE_PATH, "org.bluez.AgentManager1", "UnregisterAgent");
+  const char * object_path = APP_PATH;
+  dbus_message_append_args(msg, 
+      DBUS_TYPE_OBJECT_PATH, &object_path, 
+      DBUS_TYPE_INVALID);
+  DBusError err;
+
+  dbus_error_init(&err);
+
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+  dbus_message_unref(msg);
+
+  if(reply) {
+  dbus_message_unref(reply);
+  }
+}
+
+
 void fail(DBusError e) {
   std::cout << e.name;
   std::cout << e.message;
@@ -233,7 +303,7 @@ void fail(DBusError e) {
 Device::Device(std::string path, DBusConnection * connection) {
   this->connection = connection;
   this->path = path;
-  alias = "NO_NAME";
+  alias = "";
   connected = false;
   bonded = false;
   rssi = 0;
@@ -316,7 +386,7 @@ std::optional<short> Device::getShort(std::string property) {
     retval = result;
   }
 
-  dbus_message_unref(reply);
+  if(reply) dbus_message_unref(reply);
   dbus_message_unref(msg);
 
   return retval;
@@ -349,7 +419,7 @@ std::optional<bool> Device::getBool(std::string property) {
     retval = result;
   }
 
-  dbus_message_unref(reply);
+  if(reply) dbus_message_unref(reply);
   dbus_message_unref(msg);
 
   return retval;
@@ -377,7 +447,7 @@ short Device::getRSSI() {
 
 
 std::optional<DBusError> Device::call(std::string functionName) {
-  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.bluez.Device1", "functionName");
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, path.c_str(), "org.bluez.Device1", functionName.c_str());
 
   DBusError err;
   dbus_error_init(&err);
@@ -389,7 +459,7 @@ std::optional<DBusError> Device::call(std::string functionName) {
     retval = err;
   }
 
-  dbus_message_unref(reply);
+  if(reply) dbus_message_unref(reply);
   dbus_message_unref(msg);
   return retval;
 }
@@ -421,4 +491,28 @@ bool Device::pair() {
   return call("Pair").has_value();
 }
 
-bool Device::unPair() {}
+bool Device::unPair() {
+  DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, ADAPTER_PATH, "org.bluez.Adapter1", "RemoveDevice");
+  dbus_message_append_args(msg,
+      DBUS_TYPE_OBJECT_PATH, &path,
+      DBUS_TYPE_INVALID);
+
+  DBusError err;
+  dbus_error_init(&err);
+
+  DBusMessage * reply = dbus_connection_send_with_reply_and_block(connection, msg, -1, &err);
+
+  dbus_message_unref(msg);
+
+  if(reply) {
+    dbus_message_unref(reply);
+    return false;
+  }
+
+  return true;
+}
+
+
+std::string Device::getPath() {
+  return path;
+}

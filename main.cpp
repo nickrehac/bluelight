@@ -5,6 +5,9 @@
 #define INPUT_SHOULD_EXIT 1
 #define INPUT_CONTINUE 0
 
+#define KEYS_FILE "/etc/bluelight/keys"
+#define PING_INTERVAL 1000 * 20
+
 class Gui {
   static const unsigned int WINDOW_WIDTH = 50;
 
@@ -56,34 +59,50 @@ public:
   }
 
   void setDevices(std::vector<Device> d) {
-    int newDevicesSize = d.size();
+    int oldDevicesSize = devices.size();
+    int oldPairedSize = pairedDevices.size();
+
+    devices = d;
+
+    devices.erase(std::remove_if(devices.begin(), devices.end(), [](Device dev){
+      return dev.getAddress().compare(0, 2, dev.getAlias(), 0, 2) == 0;
+    }), devices.end());
 
     pairedDevices.clear();
     std::copy_if(d.begin(), d.end(), std::back_inserter(pairedDevices), [](Device dev){return dev.isBonded();});
 
-    if(newDevicesSize != devices.size()) {
+    if(oldDevicesSize != devices.size()) {
       werase(pairingWindow);
       wrefresh(pairingWindow);
-      wresize(pairingWindow, newDevicesSize + 2, WINDOW_WIDTH);
+      wresize(pairingWindow, devices.size() + 2, WINDOW_WIDTH);
 
+
+      if(cursorDevices >= devices.size()) cursorDevices = devices.size() - 1;
+    }
+
+    if(oldPairedSize != pairedDevices.size()) {
       werase(keyingWindow);
       wrefresh(keyingWindow);
       wresize(keyingWindow, pairedDevices.size() + 2, WINDOW_WIDTH);
     }
-    devices = d;
 
-    (void)std::remove_if(keys.begin(), keys.end(), [this](std::string key) {
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [this](std::string key) {
       return std::find_if(pairedDevices.begin(), pairedDevices.end(), [key](Device dev){
-        return dev.getAddress() == key;
+        return dev.getAddress() == key || dev.getAlias().length() == 0;
       }) == pairedDevices.end();
-    });
+    }), keys.end());
+
 
     render();
   }
 
-  void setKeys();
+  void setKeys(std::vector<std::string> k) {
+    keys = k;
+  }
 
-  void getKeys();
+  std::vector<std::string> getKeys() {
+    return keys;
+  }
 
   void render() {
     werase(pairingWindow);
@@ -190,11 +209,13 @@ public:
 
       if(cursorDevices > devices.size() - 1) cursorDevices = devices.size() - 1;
 
-      if(key == KEY_ENTER) {
+      if(key == '\n') {
         Device curDevice = devices[cursorDevices];
         if(curDevice.isBonded()) {
           curDevice.unPair();
-        } else curDevice.pair();
+        } else if(!curDevice.pair()) {
+          setDevices(devices);
+        }
       }
     } else {
       if(key == KEY_UP && cursorKeys > 0) cursorKeys--;
@@ -206,7 +227,7 @@ public:
         Device curDevice = pairedDevices[cursorKeys];
         if(std::find(keys.begin(), keys.end(), curDevice.getAddress()) == keys.end()) {
           keys.push_back(curDevice.getAddress());
-        } else (void)std::remove(keys.begin(), keys.end(), curDevice.getAddress());
+        } else keys.erase(std::remove(keys.begin(), keys.end(), curDevice.getAddress()), keys.end());
       }
     }
 
@@ -220,6 +241,28 @@ public:
   }
 };
 
+std::vector<std::string> loadKeys() {
+  std::vector<std::string> retval;
+  std::fstream file(KEYS_FILE, std::ios_base::in);
+
+  char readBuffer[64];
+
+  while(true) {
+    file.getline(readBuffer, 64);
+    if(file.eof() || file.fail()) break;
+    retval.push_back(std::string(readBuffer));
+  }
+
+  return retval;
+}
+
+void saveKeys(std::vector<std::string> keys) {
+  std::fstream file(KEYS_FILE, std::ios_base::out);
+
+  for(std::string key : keys) {
+    file << key << '\n';
+  }
+}
 
 int main() {
   BluetoothController controller;
@@ -229,6 +272,8 @@ int main() {
 
 
   Gui gui;
+
+  gui.setKeys(loadKeys());
 
   gui.render();
 
@@ -241,7 +286,10 @@ int main() {
 
   while(true) {
     controller.poll();
-    if(gui.doInput() == INPUT_SHOULD_EXIT) return 0;
+    if(gui.doInput() == INPUT_SHOULD_EXIT) {
+      saveKeys(gui.getKeys());
+      return 0;
+    }
     controller.updateDevices();
   }
 }
