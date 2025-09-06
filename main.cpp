@@ -1,12 +1,16 @@
 #include "bluelight.hpp"
-#include <fstream>
+
 #include <ncurses.h>
+
+#include <fstream>
+#include <thread>
+
 
 #define INPUT_SHOULD_EXIT 1
 #define INPUT_CONTINUE 0
 
 #define KEYS_FILE "/etc/bluelight/keys"
-#define PING_INTERVAL 1000 * 20
+constexpr auto PING_INTERVAL = std::chrono::seconds(10);
 
 class Gui {
   static const unsigned int WINDOW_WIDTH = 50;
@@ -264,7 +268,7 @@ void saveKeys(std::vector<std::string> keys) {
   }
 }
 
-int main() {
+int editor() {
   BluetoothController controller;
 
   controller.startDiscovery();
@@ -292,4 +296,60 @@ int main() {
     }
     controller.updateDevices();
   }
+}
+
+int daemon() {
+  std::vector<std::string> keys = loadKeys();
+  if(keys.size() == 0) return 1;
+
+  BluetoothController controller;
+  controller.updateDevices();
+
+  std::vector<Device> devices = controller.getDevices();
+
+  bool lightsOn = false;
+
+  while(true) {
+    std::this_thread::sleep_for(PING_INTERVAL);
+
+    bool keyFound = false;
+
+    for(auto key : keys) {
+      auto foundDevice = std::find_if(devices.begin(), devices.end(), [key](Device d){
+        return d.getAddress() == key;
+      });
+
+      if(foundDevice == devices.end()) continue;
+      if((*foundDevice).verifyProximity()) {
+        keyFound = true;
+        break;
+      }
+    }
+
+    if(keyFound && !lightsOn) {
+      std::cout << "key found, turning lights on" << std::endl;
+      lightsOn = true;
+    } else if(!keyFound && lightsOn) {
+      std::cout << "no keys found, turning lights off" << std::endl;
+      lightsOn = false;
+    }
+  }
+}
+
+void printHelp(std::vector<std::string> args) {
+  std::cout <<
+    "---BLUELIGHT---\n" <<
+    "Usage: " << args[0] << " <daemon | editor>\n" << std::endl;
+}
+
+int main(int argc, const char ** argv) {
+  std::vector<std::string> args;
+  for(int i = 0; i < argc; i++) {
+    args.push_back(std::string(argv[i]));
+  }
+
+  if(argc == 1) printHelp(args);
+  else if(!args[1].compare("editor")) return editor();
+  else if(!args[1].compare("daemon")) return daemon();
+  else printHelp(args);
 }

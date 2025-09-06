@@ -40,13 +40,14 @@ DBusHandlerResult BluetoothController::methodCallHandler(DBusConnection * connec
 
   std::string method = dbus_message_get_member(message);
 
-
-  dbus_message_get_member(message);
-
   if(!method.compare("RequestConfirmation")) {
     DBusMessage * reply = dbus_message_new_method_return(message);
     dbus_connection_send(connection, reply, nullptr);
     dbus_message_unref(reply);
+    return DBUS_HANDLER_RESULT_HANDLED;
+  }
+  else {
+    std::cerr << method << std::endl;
   }
 
   return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -74,6 +75,7 @@ BluetoothController::BluetoothController() {
   DBusObjectPathVTable vtable = {
     .message_function = BluetoothController::incomingMessageHandler
   };
+  dbus_connection_register_object_path(connection, APP_PATH, &vtable, this);
   dbus_connection_register_object_path(connection, "/", &vtable, this);
 
   dbus_connection_set_watch_functions(connection, addWatchFunction, removeWatchFunction, NULL, &watches, freeWatchFunction);
@@ -88,6 +90,7 @@ BluetoothController::~BluetoothController() {
   if(connection) {
     unregisterAgent();
     dbus_connection_unregister_object_path(connection, "/");
+    dbus_connection_unregister_object_path(connection, APP_PATH);
     dbus_connection_unref(connection);
   }
 }
@@ -256,7 +259,7 @@ void BluetoothController::poll() {
 void BluetoothController::registerAgent() {
   DBusMessage * msg = dbus_message_new_method_call(BT_SERVICE, BT_SERVICE_PATH, "org.bluez.AgentManager1", "RegisterAgent");
   const char * object_path = APP_PATH;
-  const char * capability = "NoInputNoOutput";
+  const char * capability = "DisplayYesNo";
   dbus_message_append_args(msg, 
       DBUS_TYPE_OBJECT_PATH, &object_path, 
       DBUS_TYPE_STRING, &capability, 
@@ -478,7 +481,10 @@ bool Device::verifyProximity() {
 
   if(connectionStatus) {
     const char * err = connectionStatus.value().name;
-    if(strcmp(err, "org.bluez.Error.AlreadyConnected")) return true;
+    if(!strcmp(err, "org.bluez.Error.AlreadyConnected")) return true;
+    if(!strcmp(err, "org.bluez.Error.InProgress")) {
+      call("Disconnect");
+    }
     return false;
   } else {
     call("Disconnect");
